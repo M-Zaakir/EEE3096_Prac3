@@ -52,7 +52,9 @@ extern UART_HandleTypeDef huart2;
 uint64_t checksum = 0;
 uint32_t start_time = 0;
 uint32_t end_time = 0;
-uint32_t exec_time = 0;
+volatile uint32_t exec_time[15] = { 0 };
+int64_t scales[] = { 1000, 10000, 1000000 };
+volatile int64_t SCALE = 0;
 
 int image_sizes[] = { 128, 160, 192, 224, 256 };
 int num_sizes = 5;
@@ -104,9 +106,8 @@ uint64_t calculate_mandelbrot_float(int width, int height, int max_iterations) {
 }
 
 // Mandelbrot implementation (fixed-point arithmetic)
-uint64_t calculate_mandelbrot_fixed_point(int width, int height,
-		int max_iterations) {
-	int SCALE = 1000000;  // Fixed-point scaling factor (10^6)
+uint64_t calculate_mandelbrot_fixed_point_scaled(int width, int height,
+		int max_iterations, int64_t SCALE) {
 	uint64_t checksum = 0;
 
 	for (int y = 0; y < height; y++) {
@@ -123,8 +124,8 @@ uint64_t calculate_mandelbrot_fixed_point(int width, int height,
 				if (x2 + y2 > 4000000)
 					break;
 
-				int32_t temp = (x2 - y2) + x0;
-				yi = (2LL * xi * yi) / SCALE + y0;
+				int32_t temp = (int32_t) (x2 - y2) + x0;
+				yi = (int32_t) ((2LL * xi * yi) / SCALE + y0);
 				xi = temp;
 
 				iteration++;
@@ -209,36 +210,35 @@ int main(void) {
 		// Visual indicator: Turn on LED0
 		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-		// Run Mandelbrot with floats for each image size
-		for (int i = 0; i < num_sizes; i++) {
-			int width = image_sizes[i];
-			int height = image_sizes[i];
+		for (int s = 0; s < 3; s++) {
+			SCALE = scales[s];
 
-			start_time = HAL_GetTick();
-			checksum = calculate_mandelbrot_double(width, height, MAX_ITER);
-			end_time = HAL_GetTick();
+			for (int i = 0; i < num_sizes; i++) {
+				int width = image_sizes[i];
+				int height = image_sizes[i];
 
-			exec_time = end_time - start_time;
+				start_time = HAL_GetTick();
+				checksum = calculate_mandelbrot_fixed_point_scaled(width,
+						height, MAX_ITER, SCALE);
+				end_time = HAL_GetTick();
+				exec_time[i] = end_time - start_time;
 
-			// Watch in Live Expressions:
-			// checksum, exec_time, width, height
-			// Or use printf if UART is set up:
-			// printf("Size=%d, Time=%lu ms, Checksum=%llu\n", width, exec_time, checksum);
+				// Visual indicator: Turn on LED1
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
+				// Keep LEDs on for 2 seconds
+				HAL_Delay(2000);
+
+				// Turn OFF LEDs
+				HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1,
+						GPIO_PIN_RESET);
+
+				// Optional: Stop after one run
+				// while(1);
+			}
+			/* USER CODE END 3 */
 		}
-
-		// Visual indicator: Turn on LED1
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-		// Keep LEDs on for 2 seconds
-		HAL_Delay(2000);
-
-		// Turn OFF LEDs
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
-
-		// Optional: Stop after one run
-		// while(1);
 	}
-	/* USER CODE END 3 */
 }
 
 /**
