@@ -44,18 +44,19 @@
 #include <stdint.h>
 
 #define CPU_FREQ_HZ 48000000ULL   /* STM32F0 clock frequency for cycles calculation */
-
+/* USER CODE BEGIN PV */
 uint64_t checksum = 0;
-uint32_t start_time_ms = 0;
-uint32_t end_time_ms = 0;
+uint32_t start_time = 0;
+uint32_t end_time = 0;
 
-/* Image sizes from Practical 1B */
-int image_sizes[] = {128, 160, 192, 224, 256};
-const int num_sizes = 5;
+int image_sizes_w[] = {320, 640, 1280, 1920};
+int image_sizes_h[] = {240, 480, 720, 1080};
+int num_sizes = 4;
+
 
 /* Results arrays (one entry per image size) - visible in Live Expressions */
 volatile uint32_t exec_time[5]    = {0};   /* wall-clock time in ms */
-volatile uint64_t clock_cycles_arr[5]    = {0};   /* estimated CPU cycles */
+volatile uint64_t cycles_arr[5]    = {0};   /* estimated CPU cycles */
 volatile double throughput_pps_arr[5]    = {0.0}; /* pixels per second (double for readability) */
 
 #define MAX_ITER 100  /* Constraint for Task 3 */
@@ -71,6 +72,28 @@ uint64_t calculate_mandelbrot_fixed_point(int width, int height, int max_iterati
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint64_t calculate_mandelbrot_float_scalable(int width, int height, int max_iterations) {
+    uint64_t local_checksum = 0;
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            float x0 = ((float)x / (float)width) * 3.5f - 2.5f;
+            float y0 = ((float)y / (float)height) * 2.0f - 1.0f;
+            float xi = 0.0f, yi = 0.0f;
+            int iteration = 0;
+
+            while (iteration < max_iterations && (xi*xi + yi*yi) <= 4.0f) {
+                float temp = xi*xi - yi*yi + x0;
+                yi = 2.0f*xi*yi + y0;
+                xi = temp;
+                iteration++;
+            }
+            local_checksum += iteration;
+        }
+    }
+    return local_checksum;
+}
+
 uint64_t calculate_mandelbrot_fixed_point(int width, int height,
 		int max_iterations) {
 	int SCALE = 1000000;  // Fixed-point scaling factor (10^6)
@@ -148,65 +171,26 @@ int main(void)
 	      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
 	      for (int i = 0; i < num_sizes; i++) {
-	            int width = image_sizes[i];
-	            int height = image_sizes[i];
+	              int width = image_sizes_w[i];
+	              int height = image_sizes_h[i];
 
-	            /* Start timing (ms) */
-	            start_time_ms = HAL_GetTick();
+	              start_time = HAL_GetTick();
+	              checksum = calculate_mandelbrot_float_scalable(width, height, 100);
+	              end_time = HAL_GetTick();
 
-	            /* Run the fixed-point Mandelbrot (execution being measured) */
-	            checksum = calculate_mandelbrot_fixed_point(width, height, MAX_ITER);
+	              uint32_t elapsed_ms = (end_time >= start_time) ? (end_time - start_time)
+	                                                            : (0xFFFFFFFFUL - start_time + end_time + 1);
 
-	            /* End timing (ms) */
-	            end_time_ms = HAL_GetTick();
+	              exec_time[i] = elapsed_ms;
+	              cycles_arr[i] = (48000000ULL * elapsed_ms) / 1000ULL; // 48 MHz F0
+	              throughput_arr[i] = ((double)width * (double)height) / ((double)elapsed_ms / 1000.0);
 
-	            /* Compute elapsed time in ms (handle wrap-around of HAL_GetTick if necessary) */
-	            uint32_t elapsed_ms;
-	            if (end_time_ms >= start_time_ms) {
-	                elapsed_ms = end_time_ms - start_time_ms;
-	            } else {
-	                /* tick wrap-around case */
-	                elapsed_ms = (uint32_t)((0xFFFFFFFFUL - start_time_ms) + end_time_ms + 1UL);
-	            }
-	            7u[i] = elapsed_ms;
+	              // Observe checksum, exec_time_ms_arr, cycles_arr, throughput_arr in Live Expressions
+	          }
 
-	            /* Compute CPU cycles using formula: cycles = CPU_FREQ_HZ * exec_time_seconds
-	               To avoid floating point here: cycles = CPU_FREQ_HZ * elapsed_ms / 1000
-	               Use 64-bit arithmetic */
-	            uint64_t cycles = (CPU_FREQ_HZ * (uint64_t)elapsed_ms) / 1000ULL;
-	            clock_cycles_arr[i] = cycles;
-
-	            /* Compute throughput: pixels / seconds.
-	               Use double for throughput so you can display fractional pps in debugger if desired */
-	            uint64_t pixels = (uint64_t)width * (uint64_t)height;
-	            double elapsed_s = ((double)elapsed_ms) / 1000.0;
-	            if (elapsed_s > 0.0) {
-	                throughput_pps_arr[i] = ((double)pixels) / elapsed_s;
-	            } else {
-	                throughput_pps_arr[i] = 0.0; /* avoid division by zero */
-	            }
-
-	            /* At this point the following arrays have values you can inspect in Live Expressions:
-	               exec_time_ms_arr[i], clock_cycles_arr[i], throughput_pps_arr[i], checksum
-	               (You can also save/print them via UART if you enable printf/UART) */
-	        }
-
-	        /* Turn on LED1 to signal processing done */
-	        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-	        /* Keep LEDs ON for 2s so you can see the status */
-	        HAL_Delay(2000);
-
-	        /* Turn off LEDs */
-	        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
-	      // Visual indicator: Turn on LED1
-	      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-
-	      // Keep LEDs ON for 2 seconds
-	      HAL_Delay(2000);
-
-	      // Turn OFF LEDs
-	      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
+	          HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET); // LED1 ON
+	          HAL_Delay(2000);
+	          HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
 
 	      // Optional: stop after one full run
 	      // while (1);
