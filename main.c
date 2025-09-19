@@ -1,23 +1,26 @@
-/* USER CODE BEGIN Header F0*/
+/* USER CODE BEGIN Header f4 */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdio.h>
+#include "stm32f4xx_hal_conf.h"
+#include "stm32f4xx_it.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -40,60 +43,67 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart2;
 
-#include <stdint.h>
-
-#define CPU_FREQ_HZ 48000000ULL   /* STM32F0 clock frequency for cycles calculation */
 /* USER CODE BEGIN PV */
+//TODO: Define variables you think you might need
+// - Performance timing variables (e.g execution time, throughput, pixels per second, clock cycles)
+extern UART_HandleTypeDef huart2;
 uint64_t checksum = 0;
 uint32_t start_time = 0;
 uint32_t end_time = 0;
+uint32_t exec_time = 0;
 
-int image_sizes_w[] = {320, 640, 1280, 1920};
-int image_sizes_h[] = {240, 480, 720, 1080};
-int num_sizes = 4;
+int image_sizes[] = { 128, 160, 192, 224, 256 };
+int num_sizes = 5;
 
+#define MAX_ITER 100
 
-/* Results arrays (one entry per image size) - visible in Live Expressions */
-volatile uint32_t exec_time[5]    = {0};   /* wall-clock time in ms */
-volatile uint64_t cycles_arr[5]    = {0};   /* estimated CPU cycles */
-volatile double throughput_pps_arr[5]    = {0.0}; /* pixels per second (double for readability) */
-
-#define MAX_ITER 100  /* Constraint for Task 3 */
-/* ---------------- USER CODE END PV ---------------- */
+/* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 //TODO: Define any function prototypes you might need such as the calculate Mandelbrot function among others
-uint64_t calculate_mandelbrot_fixed_point(int width, int height, int max_iterations);
+uint64_t calculate_mandelbrot_fixed_point(int width, int height,
+		int max_iterations);
+uint64_t calculate_mandelbrot_double(int width, int height, int max_iterations);
+uint64_t calculate_mandelbrot_float(int width, int height, int max_iterations);
+// DWT cycle counter setup
+void DWT_Init(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint64_t calculate_mandelbrot_float_scalable(int width, int height, int max_iterations) {
-    uint64_t local_checksum = 0;
+uint64_t calculate_mandelbrot_float(int width, int height, int max_iterations) {
+	uint64_t checksum = 0;
 
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            float x0 = ((float)x / (float)width) * 3.5f - 2.5f;
-            float y0 = ((float)y / (float)height) * 2.0f - 1.0f;
-            float xi = 0.0f, yi = 0.0f;
-            int iteration = 0;
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			float x0 = ((float) x / (float) width) * 3.5f - 2.5f;
+			float y0 = ((float) y / (float) height) * 2.0f - 1.0f;
 
-            while (iteration < max_iterations && (xi*xi + yi*yi) <= 4.0f) {
-                float temp = xi*xi - yi*yi + x0;
-                yi = 2.0f*xi*yi + y0;
-                xi = temp;
-                iteration++;
-            }
-            local_checksum += iteration;
-        }
-    }
-    return local_checksum;
+			float xi = 0.0f;
+			float yi = 0.0f;
+			int iteration = 0;
+
+			while (iteration < max_iterations && (xi * xi + yi * yi) <= 4.0f) {
+				float temp = xi * xi - yi * yi + x0;
+				yi = 2.0f * xi * yi + y0;
+				xi = temp;
+				iteration++;
+			}
+			checksum += iteration;
+		}
+	}
+
+	return checksum;
 }
 
+// Mandelbrot implementation (fixed-point arithmetic)
 uint64_t calculate_mandelbrot_fixed_point(int width, int height,
 		int max_iterations) {
 	int SCALE = 1000000;  // Fixed-point scaling factor (10^6)
@@ -125,170 +135,242 @@ uint64_t calculate_mandelbrot_fixed_point(int width, int height,
 	return checksum;
 }
 
+// Mandelbrot implementation (double precision)
+uint64_t calculate_mandelbrot_double(int width, int height, int max_iterations) {
+	uint64_t checksum = 0;
+	for (int y = 0; y < height; y++) {
+		for (int x = 0; x < width; x++) {
+			double x0 = ((double) x / width) * 3.5 - 2.5;
+			double y0 = ((double) y / height) * 2.0 - 1.0;
+			double xi = 0, yi = 0;
+			int iteration = 0;
+
+			while (iteration < max_iterations && (xi * xi + yi * yi) <= 4.0) {
+				double temp = xi * xi - yi * yi + x0;
+				yi = 2 * xi * yi + y0;
+				xi = temp;
+				iteration++;
+			}
+			checksum += iteration;
+		}
+	}
+	return checksum;
+}
+
+// Enable DWT cycle counter
+void DWT_Init(void) {
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Enable TRC
+	DWT->CYCCNT = 0;                                // Reset counter
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;            // Enable cycle counter
+}
+
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
-int main(void)
-{
+ * @brief  The application entry point.
+ * @retval int
+ */
+int main(void) {
 
-  /* USER CODE BEGIN 1 */
+	/* USER CODE BEGIN 1 */
 
-  /* USER CODE END 1 */
+	/* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
+	/* MCU Configuration--------------------------------------------------------*/
 
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+	HAL_Init();
 
-  /* USER CODE BEGIN Init */
+	/* USER CODE BEGIN Init */
 
-  /* USER CODE END Init */
+	/* USER CODE END Init */
 
-  /* Configure the system clock */
-  SystemClock_Config();
+	/* Configure the system clock */
+	SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
+	/* USER CODE BEGIN SysInit */
 
-  /* USER CODE END SysInit */
+	/* USER CODE END SysInit */
 
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  /* USER CODE BEGIN 2 */
+	/* Initialize all configured peripherals */
+	MX_GPIO_Init();
+	MX_USART2_UART_Init();
+	/* USER CODE BEGIN 2 */
+	// Initialise DWT before while loop
+	DWT_Init();
+	/* USER CODE END 2 */
 
-  /* USER CODE END 2 */
+	/* Infinite loop */
+	/* USER CODE BEGIN WHILE */
+	while (1) {
+		/* USER CODE END WHILE */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
+		/* USER CODE BEGIN 3 */
+		// Visual indicator: Turn on LED0
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-    /* USER CODE BEGIN 3 */
-	  // Visual indicator: Turn on LED0
-	      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+		// Run Mandelbrot with floats for each image size
+		for (int i = 0; i < num_sizes; i++) {
+			int width = image_sizes[i];
+			int height = image_sizes[i];
 
-	      for (int i = 0; i < num_sizes; i++) {
-	              int width = image_sizes_w[i];
-	              int height = image_sizes_h[i];
+			start_time = HAL_GetTick();
+			checksum = calculate_mandelbrot_double(width, height, MAX_ITER);
+			end_time = HAL_GetTick();
 
-	              start_time = HAL_GetTick();
-	              checksum = calculate_mandelbrot_float_scalable(width, height, 100);
-	              end_time = HAL_GetTick();
+			exec_time = end_time - start_time;
 
-	              uint32_t elapsed_ms = (end_time >= start_time) ? (end_time - start_time)
-	                                                            : (0xFFFFFFFFUL - start_time + end_time + 1);
+			// Watch in Live Expressions:
+			// checksum, exec_time, width, height
+			// Or use printf if UART is set up:
+			// printf("Size=%d, Time=%lu ms, Checksum=%llu\n", width, exec_time, checksum);
+		}
 
-	              exec_time[i] = elapsed_ms;
-	              cycles_arr[i] = (48000000ULL * elapsed_ms) / 1000ULL; // 48 MHz F0
-	              throughput_arr[i] = ((double)width * (double)height) / ((double)elapsed_ms / 1000.0);
+		// Visual indicator: Turn on LED1
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 
-	              // Observe checksum, exec_time_ms_arr, cycles_arr, throughput_arr in Live Expressions
-	          }
+		// Keep LEDs on for 2 seconds
+		HAL_Delay(2000);
 
-	          HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET); // LED1 ON
-	          HAL_Delay(2000);
-	          HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
+		// Turn OFF LEDs
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
 
-	      // Optional: stop after one full run
-	      // while (1);
-	  }
-	  /* USER CODE END 3 */
+		// Optional: Stop after one run
+		// while(1);
+	}
+	/* USER CODE END 3 */
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void) {
+	RCC_OscInitTypeDef RCC_OscInitStruct = { 0 };
+	RCC_ClkInitTypeDef RCC_ClkInitStruct = { 0 };
 
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL12;
-  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	/** Configure the main internal regulator output voltage
+	 */
+	__HAL_RCC_PWR_CLK_ENABLE();
+	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
 
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+	/** Initializes the RCC Oscillators according to the specified parameters
+	 * in the RCC_OscInitTypeDef structure.
+	 */
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLM = 15;
+	RCC_OscInitStruct.PLL.PLLN = 144;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+	RCC_OscInitStruct.PLL.PLLQ = 2;
+	RCC_OscInitStruct.PLL.PLLR = 2;
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
+		Error_Handler();
+	}
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
+	/** Initializes the CPU, AHB and APB buses clocks
+	 */
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK
+			| RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3) != HAL_OK) {
+		Error_Handler();
+	}
+
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  /* USER CODE BEGIN MX_GPIO_Init_1 */
+ * @brief USART2 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_USART2_UART_Init(void) {
 
-  /* USER CODE END MX_GPIO_Init_1 */
+	/* USER CODE BEGIN USART2_Init 0 */
 
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
+	/* USER CODE END USART2_Init 0 */
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+	/* USER CODE BEGIN USART2_Init 1 */
 
-  /*Configure GPIO pins : PB0 PB1 PB2 PB3
-                           PB4 PB5 PB6 PB7 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3
-                          |GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	/* USER CODE END USART2_Init 1 */
+	huart2.Instance = USART2;
+	huart2.Init.BaudRate = 115200;
+	huart2.Init.WordLength = UART_WORDLENGTH_8B;
+	huart2.Init.StopBits = UART_STOPBITS_1;
+	huart2.Init.Parity = UART_PARITY_NONE;
+	huart2.Init.Mode = UART_MODE_TX_RX;
+	huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+	huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+	if (HAL_UART_Init(&huart2) != HAL_OK) {
+		Error_Handler();
+	}
+	/* USER CODE BEGIN USART2_Init 2 */
 
-  /* USER CODE BEGIN MX_GPIO_Init_2 */
+	/* USER CODE END USART2_Init 2 */
 
-  /* USER CODE END MX_GPIO_Init_2 */
+}
+
+/**
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_GPIO_Init(void) {
+	GPIO_InitTypeDef GPIO_InitStruct = { 0 };
+	/* USER CODE BEGIN MX_GPIO_Init_1 */
+
+	/* USER CODE END MX_GPIO_Init_1 */
+
+	/* GPIO Ports Clock Enable */
+	__HAL_RCC_GPIOC_CLK_ENABLE();
+	__HAL_RCC_GPIOH_CLK_ENABLE();
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	/*Configure GPIO pin Output Level */
+	HAL_GPIO_WritePin(GPIOB,
+			GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_4
+					| GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7, GPIO_PIN_RESET);
+
+	/*Configure GPIO pins : PB0 PB1 PB2 PB3
+	 PB4 PB5 PB6 PB7 */
+	GPIO_InitStruct.Pin = GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3
+			| GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	/* USER CODE BEGIN MX_GPIO_Init_2 */
+
+	/* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */
 //TODO: Function signatures you defined previously , implement them here
-
+int __io_putchar(int ch) {
+	HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, HAL_MAX_DELAY);
+	return ch;
+}
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
+void Error_Handler(void) {
+	/* USER CODE BEGIN Error_Handler_Debug */
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1) {
+	}
+	/* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
 /**
