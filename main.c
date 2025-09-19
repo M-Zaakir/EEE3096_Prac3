@@ -41,24 +41,25 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-/* USER CODE BEGIN PV */
-//TODO: Define variables you think you might need
-// - Performance timing variables (e.g execution time, throughput, pixels per second, clock cycles)
+#include <stdint.h>
+
+#define CPU_FREQ_HZ 48000000ULL   /* STM32F0 clock frequency for cycles calculation */
+
 uint64_t checksum = 0;
-uint32_t start_time = 0;
-uint32_t end_time = 0;
-uint32_t exec_time = 0;
-volatile int width = 0;
-volatile int max_iter = 0;
+uint32_t start_time_ms = 0;
+uint32_t end_time_ms = 0;
 
-
+/* Image sizes from Practical 1B */
 int image_sizes[] = {128, 160, 192, 224, 256};
-int num_sizes = 5;
+const int num_sizes = 5;
 
-// MAX_ITER values for Task 2
-int iter_values[] = {100, 250, 500, 750, 1000};
-int num_iters = 5;
-/* USER CODE END PV */
+/* Results arrays (one entry per image size) - visible in Live Expressions */
+volatile uint32_t exec_time[5]    = {0};   /* wall-clock time in ms */
+volatile uint64_t clock_cycles_arr[5]    = {0};   /* estimated CPU cycles */
+volatile double throughput_pps_arr[5]    = {0.0}; /* pixels per second (double for readability) */
+
+#define MAX_ITER 100  /* Constraint for Task 3 */
+/* ---------------- USER CODE END PV ---------------- */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -146,28 +147,58 @@ int main(void)
 	  // Visual indicator: Turn on LED0
 	      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
 
-	      // Loop over MAX_ITER values
-	      for (int j = 0; j < num_iters; j++) {
-	          max_iter = iter_values[j];
+	      for (int i = 0; i < num_sizes; i++) {
+	            int width = image_sizes[i];
+	            int height = image_sizes[i];
 
-	          // Loop over image sizes
-	          for (int i = 0; i < num_sizes; i++) {
-	              width = image_sizes[i];
-	              int height = image_sizes[i];
+	            /* Start timing (ms) */
+	            start_time_ms = HAL_GetTick();
 
-	              start_time = HAL_GetTick();
-	              checksum = calculate_mandelbrot_fixed_point(width, height, max_iter);
-	              end_time = HAL_GetTick();
+	            /* Run the fixed-point Mandelbrot (execution being measured) */
+	            checksum = calculate_mandelbrot_fixed_point(width, height, MAX_ITER);
 
-	              exec_time = end_time - start_time;
+	            /* End timing (ms) */
+	            end_time_ms = HAL_GetTick();
 
-	              // Observe exec_time, checksum, width, max_iter in Live Expressions
-	              // Example if UART is set up:
-	              // printf("Iter=%d, Size=%d, Time=%lu ms, Checksum=%llu\n",
-	              //         max_iter, width, exec_time, checksum);
-	          }
-	      }
+	            /* Compute elapsed time in ms (handle wrap-around of HAL_GetTick if necessary) */
+	            uint32_t elapsed_ms;
+	            if (end_time_ms >= start_time_ms) {
+	                elapsed_ms = end_time_ms - start_time_ms;
+	            } else {
+	                /* tick wrap-around case */
+	                elapsed_ms = (uint32_t)((0xFFFFFFFFUL - start_time_ms) + end_time_ms + 1UL);
+	            }
+	            7u[i] = elapsed_ms;
 
+	            /* Compute CPU cycles using formula: cycles = CPU_FREQ_HZ * exec_time_seconds
+	               To avoid floating point here: cycles = CPU_FREQ_HZ * elapsed_ms / 1000
+	               Use 64-bit arithmetic */
+	            uint64_t cycles = (CPU_FREQ_HZ * (uint64_t)elapsed_ms) / 1000ULL;
+	            clock_cycles_arr[i] = cycles;
+
+	            /* Compute throughput: pixels / seconds.
+	               Use double for throughput so you can display fractional pps in debugger if desired */
+	            uint64_t pixels = (uint64_t)width * (uint64_t)height;
+	            double elapsed_s = ((double)elapsed_ms) / 1000.0;
+	            if (elapsed_s > 0.0) {
+	                throughput_pps_arr[i] = ((double)pixels) / elapsed_s;
+	            } else {
+	                throughput_pps_arr[i] = 0.0; /* avoid division by zero */
+	            }
+
+	            /* At this point the following arrays have values you can inspect in Live Expressions:
+	               exec_time_ms_arr[i], clock_cycles_arr[i], throughput_pps_arr[i], checksum
+	               (You can also save/print them via UART if you enable printf/UART) */
+	        }
+
+	        /* Turn on LED1 to signal processing done */
+	        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+
+	        /* Keep LEDs ON for 2s so you can see the status */
+	        HAL_Delay(2000);
+
+	        /* Turn off LEDs */
+	        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 | GPIO_PIN_1, GPIO_PIN_RESET);
 	      // Visual indicator: Turn on LED1
 	      HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
 
